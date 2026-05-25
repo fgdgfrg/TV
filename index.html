@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>TV Screen</title>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #000;
+            overflow: hidden;
+        }
+        
+        #player-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            pointer-events: none;
+        }
+    </style>
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script src="https://player.twitch.tv/js/embed/v1.js"></script>
+</head>
+
+<body>
+    <div id="player-container"></div>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const type = params.get('type');
+        const videoId = params.get('v');
+
+        const container = document.getElementById('player-container');
+        let ytPlayer = null;
+        let twitchPlayer = null;
+        let currentType = type;
+
+        if (type === 'youtube' && videoId) {
+            // استخدام الـ API الرسمي مع إضافة معايير الحماية لتخطي Error 150
+            window.onYouTubeIframeAPIReady = function() {
+                ytPlayer = new YT.Player('player-container', {
+                    height: '100%',
+                    width: '100%',
+                    videoId: videoId,
+                    host: 'https://www.youtube.com', // إضافة الهوست لتأكيد مصدر المشغل
+                    playerVars: {
+                        'autoplay': 1,
+                        'controls': 0,
+                        'disablekb': 1,
+                        'rel': 0,
+                        'showinfo': 0,
+                        'ecver': 2,
+                        'mute': 1, // بدء المقطع صامتاً لتخطي حظر المتصفح
+                        'enablejsapi': 1,
+                        'origin': window.location.origin, // سيقرأ رابط جيتهوب تلقائياً
+                        'widget_referrer': window.location.href // يعطي يوتيوب مرجعاً صحيحاً للصفحة
+                    },
+                    events: {
+                        'onReady': function(event) {
+                            event.target.playVideo();
+                            // رفع الصوت بعد الجاهزية بنصف ثانية
+                            setTimeout(() => {
+                                if (ytPlayer && typeof ytPlayer.unMute === 'function') {
+                                    ytPlayer.unMute();
+                                    ytPlayer.setVolume(50);
+                                }
+                            }, 500);
+                        },
+                        'onError': function(event) {
+                            console.log("YouTube Error Code:", event.data);
+                        }
+                    }
+                });
+            };
+            
+            // في حال تم تحميل مكتبة يوتيوب قبل هذا الكود
+            if (typeof YT !== 'undefined' && YT.Player) {
+                window.onYouTubeIframeAPIReady();
+            }
+            
+        } else if (type === 'twitch' && videoId) {
+            twitchPlayer = new Twitch.Player("player-container", {
+                channel: videoId,
+                width: "100%",
+                height: "100%",
+                autoplay: true,
+                parent: ["twitch.tv", window.location.hostname]
+            });
+            twitchPlayer.setVolume(0.5);
+            
+        } else if (type === 'kick' && videoId) {
+            container.innerHTML = `<iframe id="kick-iframe" src="https://player.kick.com/${videoId}?autoplay=true" allow="autoplay; fullscreen"></iframe>`;
+        }
+
+        // الاستماع لتحديثات وتغيير مستوى الصوت القادم من الـ client.lua (ثلاثي الأبعاد)
+        window.addEventListener('message', function(event) {
+            let data = event.data;
+            if (typeof data === 'string') {
+                try {
+                    data = JSON.parse(data);
+                } catch (e) {}
+            }
+
+            if (data && data.type === 'volume') {
+                let vol = Math.max(0.0, Math.min(1.0, data.volume));
+
+                if (currentType === 'youtube' && ytPlayer && typeof ytPlayer.setVolume === 'function') {
+                    if (vol > 0.01) {
+                        ytPlayer.unMute();
+                        ytPlayer.setVolume(vol * 100);
+                    } else {
+                        ytPlayer.mute();
+                    }
+                } else if (currentType === 'twitch' && twitchPlayer) {
+                    twitchPlayer.setVolume(vol);
+                    twitchPlayer.setMuted(vol < 0.01);
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>
